@@ -20,7 +20,7 @@
   <!-- Chart.js para el gráfico de pastel -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- SDKs de Firebase -->
+  <!-- SDKs de Firebase con tus credenciales integradas -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { 
@@ -34,25 +34,14 @@
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getFirestore, collection, addDoc, getDocs, query, where, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // 🔑 REEMPLAZA ESTO CON TUS CREDENCIALES REALES DE FIREBASE
+    // 🔑 Tus credenciales reales de Firebase
     const firebaseConfig = {
-      // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyAbwi_LFIhyhUTvOHuFNzDZpB9Nl5Eg1wM",
-  authDomain: "gastos-e67e7.firebaseapp.com",
-  projectId: "gastos-e67e7",
-  storageBucket: "gastos-e67e7.firebasestorage.app",
-  messagingSenderId: "264636885852",
-  appId: "1:264636885852:web:6b4f1f3e834a064619af99"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+      apiKey: "AIzaSyAbwi_LFIhyhUTvOHuFNzDZpB9Nl5Eg1wM",
+      authDomain: "gastos-e67e7.firebaseapp.com",
+      projectId: "gastos-e67e7",
+      storageBucket: "gastos-e67e7.firebasestorage.app",
+      messagingSenderId: "264636885852",
+      appId: "1:264636885852:web:6b4f1f3e834a064619af99"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -255,7 +244,7 @@ const app = initializeApp(firebaseConfig);
     <h2>Control de Gastos 🇨🇱</h2>
     <p style="color: #666; font-size: 14px;">Ingresa tu correo para gestionar y sincronizar tus finanzas.</p>
     <input type="email" id="email" placeholder="Correo electrónico" autocomplete="email">
-    <input type="password" id="password" placeholder="Contraseña" autocomplete="current-password">
+    <input type="password" id="password" placeholder="Contraseña (mínimo 6 caracteres)" autocomplete="current-password">
     <button onclick="iniciarSesion()">Iniciar Sesión</button>
     <button onclick="registrar()" style="background: #28a745; margin-top: 5px;">Registrarse</button>
   </div>
