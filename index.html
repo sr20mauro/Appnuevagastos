@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Gastos CLP 🇨🇱</title>
+  
+  <!-- Configuración PWA (Manifest inline básico) -->
+  <meta name="theme-color" content="#007bff">
+  <link rel="manifest" href="data:application/manifest+json;charset=utf-8,{
+    &quot;name&quot;: &quot;Control de Gastos CLP&quot;,
+    &quot;short_name&quot;: &quot;GastosCLP&quot;,
+    &quot;start_url&quot;: &quot;.&quot;,
+    &quot;display&quot;: &quot;standalone&quot;,
+    &quot;background_color&quot;: &quot;#f4f6f9&quot;,
+    &quot;theme_color&quot;: &quot;#007bff&quot;,
+    &quot;icons&quot;: [{&quot;src&quot;: &quot;https://cdn-icons-png.flaticon.com/512/3135/3135715.png&quot;, &quot;sizes&quot;: &quot;512x512&quot;, &quot;type&quot;: &quot;image/png&quot;}]
+  }">
+
+  <!-- Chart.js para el gráfico de pastel -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- SDKs de Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+      getAuth, 
+      setPersistence, 
+      browserSessionPersistence, 
+      createUserWithEmailAndPassword, 
+      signInWithEmailAndPassword, 
+      signOut, 
+      onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, getDocs, query, where, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // 🔑 REEMPLAZA ESTO CON TUS CREDENCIALES REALES DE FIREBASE
+    const firebaseConfig = {
+      apiKey: "TU_API_KEY",
+      authDomain: "TU_AUTH_DOMAIN",
+      projectId: "TU_PROJECT_ID",
+      storageBucket: "TU_STORAGE_BUCKET",
+      messagingSenderId: "TU_MESSAGING_SENDER_ID",
+      appId: "TU_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Forzar que pida login al cerrar la pestaña o abrir la app
+    setPersistence(auth, browserSessionPersistence).catch(console.error);
+
+    let usuarioActual = null;
+    let chartInstance = null;
+
+    // Formateador CLP estricto (sin decimales)
+    const formatearCLP = (monto) => {
+      return '$' + Math.round(monto).toLocaleString('es-CL');
+    };
+
+    // --- AUTENTICACIÓN ---
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        usuarioActual = user;
+        document.getElementById('auth-container').style.display = 'none';
+        document.getElementById('app-container').style.display = 'block';
+        cargarTransacciones();
+      } else {
+        usuarioActual = null;
+        document.getElementById('auth-container').style.display = 'block';
+        document.getElementById('app-container').style.display = 'none';
+      }
+    });
+
+    window.registrar = async () => {
+      const email = document.getElementById('email').value;
+      const pass = document.getElementById('password').value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, pass);
+        alert('¡Cuenta creada e iniciada con éxito!');
+      } catch (error) {
+        alert('Error al registrarse: ' + error.message);
+      }
+    };
+
+    window.iniciarSesion = async () => {
+      const email = document.getElementById('email').value;
+      const pass = document.getElementById('password').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } catch (error) {
+        alert('Error al iniciar sesión: ' + error.message);
+      }
+    };
+
+    window.cerrarSesion = async () => {
+      await signOut(auth);
+    };
+
+    // --- GESTIÓN DE DATOS (FIRESTORE) ---
+    window.agregarTransaccion = async (e) => {
+      e.preventDefault();
+      if (!usuarioActual) return;
+
+      const descripcion = document.getElementById('desc').value;
+      const monto = Number(document.getElementById('monto').value);
+      const categoria = document.getElementById('categoria').value;
+      const tipo = document.getElementById('tipo').value;
+
+      try {
+        await addDoc(collection(db, "transacciones"), {
+          userId: usuarioActual.uid,
+          descripcion,
+          monto,
+          categoria,
+          tipo,
+          fecha: serverTimestamp()
+        });
+
+        document.getElementById('form-transaccion').reset();
+        cargarTransacciones();
+      } catch (error) {
+        console.error("Error al guardar:", error);
+      }
+    };
+
+    async function cargarTransacciones() {
+      const listaEl = document.getElementById('lista-transacciones');
+      listaEl.innerHTML = '<p style="text-align:center;">Cargando datos...</p>';
+
+      try {
+        const q = query(collection(db, "transacciones"), where("userId", "==", usuarioActual.uid));
+        const querySnapshot = await getDocs(q);
+        
+        let html = '';
+        let totalIngresos = 0;
+        let totalGastos = 0;
+        const gastosPorCategoria = {
+          'Alimentación': 0,
+          'Transporte': 0,
+          'Vivienda': 0,
+          'Entretenimiento': 0,
+          'Otros': 0
+        };
+
+        querySnapshot.forEach((docSnap) => {
+          const t = docSnap.data();
+          const id = docSnap.id;
+          
+          if (t.tipo === 'ingreso') {
+            totalIngresos += t.monto;
+          } else {
+            totalGastos += t.monto;
+            if (gastosPorCategoria[t.categoria] !== undefined) {
+              gastosPorCategoria[t.categoria] += t.monto;
+            } else {
+              gastosPorCategoria['Otros'] += t.monto;
+            }
+          }
+
+          html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
+              <div>
+                <strong>${t.descripcion}</strong> <br>
+                <small style="color: #666;">${t.categoria} • <span style="color: ${t.tipo === 'ingreso' ? 'green' : 'red'};">${t.tipo.toUpperCase()}</span></small>
+              </div>
+              <div style="text-align: right;">
+                <span style="font-weight: bold; color: ${t.tipo === 'ingreso' ? 'green' : 'red'};">
+                  ${t.tipo === 'ingreso' ? '+' : '-'}${formatearCLP(t.monto)}
+                </span><br>
+                <button onclick="eliminarTransaccion('${id}')" style="background: none; border: none; color: #ff4d4d; cursor: pointer; font-size: 12px; padding: 0;">Eliminar</button>
+              </div>
+            </div>
+          `;
+        });
+
+        listaEl.innerHTML = html || '<p style="text-align:center; color:#777;">No hay transacciones registradas.</p>';
+        
+        // Actualizar tarjetas de resumen
+        document.getElementById('total-balance').innerText = formatearCLP(totalIngresos - totalGastos);
+        document.getElementById('total-ingresos').innerText = formatearCLP(totalIngresos);
+        document.getElementById('total-gastos').innerText = formatearCLP(totalGastos);
+
+        // Actualizar gráfico de pastel
+        actualizarGrafico(gastosPorCategoria);
+
+      } catch (error) {
+        console.error("Error al cargar transacciones:", error);
+      }
+    }
+
+    window.eliminarTransaccion = async (id) => {
+      if (confirm('¿Estás seguro de eliminar este registro?')) {
+        await deleteDoc(doc(db, "transacciones", id));
+        cargarTransacciones();
+      }
+    };
+
+    // --- GRÁFICO DE PASTEL (CHART.JS) ---
+    function actualizarGrafico(datos) {
+      const ctx = document.getElementById('pastelChart').getContext('2d');
+      const valores = Object.values(datos);
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(datos),
+          datasets: [{
+            data: valores,
+            backgroundColor: ['#ff6384', '#36a2eb', '#cc65fe', '#ffce56', '#4bc0c0']
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          }
+        }
+      });
+    }
+  </script>
+
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; color: #333; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
+    input, select, button { padding: 12px; margin: 8px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
+    button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .resumen-container { display: flex; gap: 10px; margin-bottom: 15px; }
+    .resumen-card { flex: 1; text-align: center; padding: 15px; background: white; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  </style>
+</head>
+<body>
+
+  <!-- 1. PANTALLA DE LOGIN / REGISTRO -->
+  <div id="auth-container" class="card" style="max-width: 400px; margin: 60px auto; text-align: center;">
+    <h2>Control de Gastos 🇨🇱</h2>
+    <p style="color: #666; font-size: 14px;">Ingresa tu correo para gestionar y sincronizar tus finanzas.</p>
+    <input type="email" id="email" placeholder="Correo electrónico" autocomplete="email">
+    <input type="password" id="password" placeholder="Contraseña" autocomplete="current-password">
+    <button onclick="iniciarSesion()">Iniciar Sesión</button>
+    <button onclick="registrar()" style="background: #28a745; margin-top: 5px;">Registrarse</button>
+  </div>
+
+  <!-- 2. APLICACIÓN PRINCIPAL -->
+  <div id="app-container" style="display: none; max-width: 500px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <h2 style="margin: 0;">Mis Finanzas CLP</h2>
+      <button onclick="cerrarSesion()" style="width: auto; background: #dc3545; padding: 8px 12px; font-size: 14px;">Cerrar Sesión</button>
+    </div>
+
+    <!-- Tarjetas de Resumen -->
+    <div class="resumen-container">
+      <div class="resumen-card">
+        <small style="color: #777;">Balance</small>
+        <h3 id="total-balance" style="margin: 5px 0 0 0;">$0</h3>
+      </div>
+      <div class="resumen-card">
+        <small style="color: #777;">Ingresos</small>
+        <h3 id="total-ingresos" style="margin: 5px 0 0 0; color: #28a745;">$0</h3>
+      </div>
+      <div class="resumen-card">
+        <small style="color: #777;">Gastos</small>
+        <h3 id="total-gastos" style="margin: 5px 0 0 0; color: #dc3545;">$0</h3>
+      </div>
+    </div>
+
+    <!-- Gráfico de Pastel -->
+    <div class="card" style="text-align: center;">
+      <h3 style="margin-top: 0; font-size: 16px; color: #555;">Desglose de Gastos</h3>
+      <div style="max-width: 250px; margin: 0 auto;">
+        <canvas id="pastelChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Formulario Nueva Transacción -->
+    <div class="card">
+      <h3 style="margin-top: 0; font-size: 16px;">Nueva Transacción</h3>
+      <form id="form-transaccion" onsubmit="agregarTransaccion(event)">
+        <input type="text" id="desc" placeholder="Descripción (ej. Supermercado Lider)" required>
+        <input type="number" id="monto" placeholder="Monto en CLP (ej. 35000)" required>
+        <select id="tipo">
+          <option value="gasto">Gasto</option>
+          <option value="ingreso">Ingreso</option>
+        </select>
+        <select id="categoria">
+          <option value="Alimentación">Alimentación</option>
+          <option value="Transporte">Transporte</option>
+          <option value="Vivienda">Vivienda</option>
+          <option value="Entretenimiento">Entretenimiento</option>
+          <option value="Otros">Otros</option>
+        </select>
+        <button type="submit" style="background: #28a745; margin-top: 5px;">Guardar Transacción</button>
+      </form>
+    </div>
+
+    <!-- Historial -->
+    <div class="card">
+      <h3 style="margin-top: 0; font-size: 16px;">Historial Reciente</h3>
+      <div id="lista-transacciones"></div>
+    </div>
+  </div>
+
+</body>
+</html>
