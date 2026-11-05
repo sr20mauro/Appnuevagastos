@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Control de Gastos CLP 🇨🇱</title>
   
-  <!-- Configuración PWA (Manifest inline básico) -->
+  <!-- Configuración PWA (Manifest inline) -->
   <meta name="theme-color" content="#007bff">
   <link rel="manifest" href="data:application/manifest+json;charset=utf-8,{
     &quot;name&quot;: &quot;Control de Gastos CLP&quot;,
@@ -20,7 +20,7 @@
   <!-- Chart.js para el gráfico de pastel -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- SDKs de Firebase con tus credenciales integradas -->
+  <!-- SDKs de Firebase con tus credenciales -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { 
@@ -34,7 +34,7 @@
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getFirestore, collection, addDoc, getDocs, query, where, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // 🔑 Tus credenciales reales de Firebase
+    // 🔑 Tus credenciales de Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyAbwi_LFIhyhUTvOHuFNzDZpB9Nl5Eg1wM",
       authDomain: "gastos-e67e7.firebaseapp.com",
@@ -48,7 +48,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Forzar que pida login al cerrar la pestaña o abrir la app
+    // Forzar persistencia por sesión (pide login al cerrar pestaña/app)
     setPersistence(auth, browserSessionPersistence).catch(console.error);
 
     let usuarioActual = null;
@@ -61,15 +61,18 @@
 
     // --- AUTENTICACIÓN ---
     onAuthStateChanged(auth, (user) => {
+      const authContainer = document.getElementById('auth-container');
+      const appContainer = document.getElementById('app-container');
+
       if (user) {
         usuarioActual = user;
-        document.getElementById('auth-container').style.display = 'none';
-        document.getElementById('app-container').style.display = 'block';
+        if (authContainer) authContainer.style.display = 'none';
+        if (appContainer) appContainer.style.display = 'block';
         cargarTransacciones();
       } else {
         usuarioActual = null;
-        document.getElementById('auth-container').style.display = 'block';
-        document.getElementById('app-container').style.display = 'none';
+        if (authContainer) authContainer.style.display = 'block';
+        if (appContainer) appContainer.style.display = 'none';
       }
     });
 
@@ -122,11 +125,13 @@
         cargarTransacciones();
       } catch (error) {
         console.error("Error al guardar:", error);
+        alert("Error al guardar la transacción. Revisa las reglas de Firestore.");
       }
     };
 
     async function cargarTransacciones() {
       const listaEl = document.getElementById('lista-transacciones');
+      if (!listaEl) return;
       listaEl.innerHTML = '<p style="text-align:center;">Cargando datos...</p>';
 
       try {
@@ -177,12 +182,10 @@
 
         listaEl.innerHTML = html || '<p style="text-align:center; color:#777;">No hay transacciones registradas.</p>';
         
-        // Actualizar tarjetas de resumen
         document.getElementById('total-balance').innerText = formatearCLP(totalIngresos - totalGastos);
         document.getElementById('total-ingresos').innerText = formatearCLP(totalIngresos);
         document.getElementById('total-gastos').innerText = formatearCLP(totalGastos);
 
-        // Actualizar gráfico de pastel
         actualizarGrafico(gastosPorCategoria);
 
       } catch (error) {
@@ -199,7 +202,9 @@
 
     // --- GRÁFICO DE PASTEL (CHART.JS) ---
     function actualizarGrafico(datos) {
-      const ctx = document.getElementById('pastelChart').getContext('2d');
+      const canvasEl = document.getElementById('pastelChart');
+      if (!canvasEl) return;
+      const ctx = canvasEl.getContext('2d');
       const valores = Object.values(datos);
 
       if (chartInstance) {
@@ -242,7 +247,7 @@
   <!-- 1. PANTALLA DE LOGIN / REGISTRO -->
   <div id="auth-container" class="card" style="max-width: 400px; margin: 60px auto; text-align: center;">
     <h2>Control de Gastos 🇨🇱</h2>
-    <p style="color: #666; font-size: 14px;">Ingresa tu correo para gestionar y sincronizar tus finanzas.</p>
+    <p style="color: #666; font-size: 14px;">Ingresa tus datos para gestionar y sincronizar tus finanzas.</p>
     <input type="email" id="email" placeholder="Correo electrónico" autocomplete="email">
     <input type="password" id="password" placeholder="Contraseña (mínimo 6 caracteres)" autocomplete="current-password">
     <button onclick="iniciarSesion()">Iniciar Sesión</button>
@@ -284,7 +289,7 @@
     <div class="card">
       <h3 style="margin-top: 0; font-size: 16px;">Nueva Transacción</h3>
       <form id="form-transaccion" onsubmit="agregarTransaccion(event)">
-        <input type="text" id="desc" placeholder="Descripción (ej. Supermercado Lider)" required>
+        <input type="text" id="desc" placeholder="Descripción (ej. Supermercado)" required>
         <input type="number" id="monto" placeholder="Monto en CLP (ej. 35000)" required>
         <select id="tipo">
           <option value="gasto">Gasto</option>
